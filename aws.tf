@@ -103,7 +103,7 @@ resource "aws_iam_role_policy" "my-portfolio-function-policy" {
         {
             "Effect": "Allow",
             "Action": "sns:Publish",
-            "Resource": "arn:aws:sns:us-east-1:315089025365:deployPortfolioTopic"
+            "Resource": aws_sns_topic.my-portfolio-topic.arn
         }
     ],
     "Version": "2012-10-17"
@@ -148,7 +148,7 @@ resource "aws_iam_role_policy" "my-portfolio-policy" {
         "lambda:InvokeFunction"
             ],
       "Resource": [
-        "*"
+        aws_lambda_function.my-portfolio-function.arn
         ]
     }
     ]
@@ -177,78 +177,19 @@ resource "aws_iam_role_policy" "my-portfolio-build-policy" {
     ]
   },
   {
-    "Sid": "CodeCommitPolicy",
-    "Effect": "Allow",
-    "Action": [
-      "codecommit:GitPull"
-    ],
-    "Resource": [
-      "*"
-    ]
-  },
-  {
     "Sid": "S3GetObjectPolicy",
     "Effect": "Allow",
     "Action": [
       "s3:GetObject",
-      "s3:GetObjectVersion"
-    ],
-    "Resource": [
-      "*"
-    ]
-  },
-  {
-    "Sid": "S3PutObjectPolicy",
-    "Effect": "Allow",
-    "Action": [
-      "s3:PutObject"
-    ],
-    "Resource": [
-      "*"
-    ]
-  },
-  {
-    "Sid": "ECRPullPolicy",
-    "Effect": "Allow",
-    "Action": [
-      "ecr:BatchCheckLayerAvailability",
-      "ecr:GetDownloadUrlForLayer",
-      "ecr:BatchGetImage"
-    ],
-    "Resource": [
-      "*"
-    ]
-  },
-  {
-    "Sid": "ECRAuthPolicy",
-    "Effect": "Allow",
-    "Action": [
-      "ecr:GetAuthorizationToken"
-    ],
-    "Resource": [
-      "*"
-    ]
-  },
-  {
-    "Sid": "S3BucketIdentity",
-    "Effect": "Allow",
-    "Action": [
+      "s3:PutObject",
+      "s3:GetObjectVersion",
       "s3:GetBucketAcl",
       "s3:GetBucketLocation"
     ],
     "Resource": [
-      "*"
-      ]
-  },
-  {
-    "Sid": "Invoke",
-    "Effect": "Allow",
-    "Action": [
-      "lambda:InvokeFunction"
-          ],
-    "Resource": [
-      "*"
-      ]
+    aws_s3_bucket.my-portfolio-bucket.arn,
+    "${aws_s3_bucket.my-portfolio-bucket.arn}/*"
+    ]
   }
 ]
 }
@@ -303,7 +244,7 @@ resource "aws_codepipeline" "my-portfolio-pipeline" {
           name             = "Deploy"
           category         = "Invoke"
           configuration    = {
-              "FunctionName" = "my-portfolio-function"
+              "FunctionName" = aws_lambda_function.my-portfolio-function.function_name
           }
           input_artifacts  = ["build_output"]
           output_artifacts = []
@@ -319,10 +260,10 @@ resource "aws_codebuild_project" "my-portfolio-build" {
   name          = "my-portfolio-build"
   service_role  = aws_iam_role.my-portfolio-build-role.arn
   source {
-                  type                   = "CODEPIPELINE"
+            type = "CODEPIPELINE"
           }
   artifacts {
-                  type                   = "CODEPIPELINE"
+              type      = "CODEPIPELINE"
             }
   environment {
       compute_type                = "BUILD_GENERAL1_SMALL"
@@ -335,9 +276,20 @@ resource "aws_codebuild_project" "my-portfolio-build" {
 
 resource "aws_lambda_function" "my-portfolio-function" {
     function_name                  = "my-portfolio-function"
-    handler                        = "upload-portfolio-lambda.lambda_handler"
+    handler                        = "lambda_function.lambda_handler"
     filename                       = "lambda_function_payload.zip"
-    role                           = "aws_iam_role.my-portfolio-function-role.arn"
+    source_code_hash               = filebase64sha256("lambda_function_payload.zip")
+    role                           = aws_iam_role.my-portfolio-function-role.arn
     runtime                        = "python3.8"
     timeout                        = 30
+}
+
+resource "aws_sns_topic" "my-portfolio-topic" {
+  name = "my-portfolio-topic"
+}
+
+resource "aws_sns_topic_subscription" "my-portfolio-topic-subscription" {
+  topic_arn = aws_sns_topic.my-portfolio-topic.arn
+  protocol  = "sms"
+  endpoint  = "+31629326568"
 }
